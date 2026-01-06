@@ -1,0 +1,108 @@
+# Run the following command replacing the IP with Web Server or VIP IP Address: ansible-playbook /etc/ansible/playbooks/Show_VIP_Config.yml --extra-vars F5Server="10.20.213.24"
+# Output file with Configuration associated with the Server IP will be at /var/tmp/resultingfile
+---
+- name: Searching and retrieving VIP Config associated with Server IP
+  hosts: BIGIPS
+
+  gather_facts: false
+
+  pre_tasks:
+
+    - name: Making sure IP address is valid
+      fail:
+        msg: >-
+          IP address is not formatted correctly. Please make sure it is of the form w.x.y.z
+      when: not F5Server is regex('^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+      run_once: true
+
+
+  tasks:
+
+    - name: Searching VIP Config on Remote Units
+      shell: |
+        tmsh list ltm  node '{{ F5Server }}'
+        tmsh list one-line | grep '{{ F5Server }}' > /var/tmp/listserver
+            if [ -s /var/tmp/listserver ]; then
+                grep -oP "pool\s+\K([^ ]*)" /var/tmp/listserver > /var/tmp/listsearchpool01
+                grep -oP "{ pool\s+\K([^ ]*)" /var/tmp/listserver > /var/tmp/listsearchpool02
+                grep -v -x -f /var/tmp/listsearchpool02 /var/tmp/listsearchpool01 > /var/tmp/listsearchpool
+                poolfile="/var/tmp/listsearchpool"
+                poolarray=( $( <"$poolfile") )
+                    for i in "${poolarray[@]}" ; do
+                        tmsh list one-line | grep -e "pool $i" > /var/tmp/listpool
+                         if [ -n "$(grep "ltm virtual" /var/tmp/listpool)" ]; then
+                            tmsh list one-line | grep -e "pool $i" >> /var/tmp/listpool2
+                            tmsh list ltm pool $i >> /var/tmp/listpool_display
+                         else
+                            touch /var/tmp/listpool_display
+                         fi
+                    done
+                grep -oP "virtual\s+\K([^ ]*)" /var/tmp/listpool2  > /var/tmp/listsearchvirtual
+                virtualfile="/var/tmp/listsearchvirtual"
+                virtualarray=( $( <"$virtualfile") )
+                    for i in "${virtualarray[@]}" ; do
+                        tmsh list one-line | grep -e "virtual $i" >> /var/tmp/listonelinevirtual
+                        tmsh list ltm virtual $i >> /var/tmp/listvirtual_display
+                    done
+                cat /var/tmp/listpool_display >> /var/tmp/listvirtual_display
+                rm -f /var/tmp/listpool*
+                rm -f /var/tmp/listsearc*
+                rm -f /var/tmp/listserver*
+                rm -f /var/tmp/listonelinevirtual
+             else
+                rm -f /var/tmp/listserver
+                touch /var/tmp/listvirtual_display
+             fi
+      register: serversearch
+      failed_when: "serversearch.rc not in [ 0, 1 ]"
+
+    - name: Copying contents of VIP Config file
+      command: cat /var/tmp/listvirtual_display
+      register: vipcontents
+
+    - lineinfile:
+        path: /var/tmp/listvirtual_display
+        insertafter: BOF
+        line: "\n\n ############## BIG-IP Unit {{ inventory_hostname }} ############## \n\n"
+      when: vipcontents.stdout != ""
+
+    - name: Copying files from Remote Units to Local
+      fetch:
+        src: /var/tmp/listvirtual_display
+        dest: /var/tmp/fetched/{{ inventory_hostname }}
+        flat: yes
+
+    - name: Deleting files created on Remote Units
+      file:
+        path: /var/tmp/listvirtual_display
+        state: absent
+
+- name: Local host file edit
+  hosts: localhost
+  vars:
+    dateandtime: "{{ lookup('pipe', 'date +%A%d%H%M') }}"
+  connection: local
+
+  tasks:
+
+    - name: Appending all files into one file
+      assemble:
+        src: /var/tmp/fetched
+        dest: /var/tmp/resultingfile
+
+# Grep returns code 1 if given string not found. Returns 2 for exceptions
+# Ansible by design stops execution if the return code is different than 0
+    - name: Displaying search results
+      shell: cat /var/tmp/resultingfile | grep 'BIG-IP\|virtual\|pool \|members\|:\|session' | grep -v 'time\|pool SNAT\|pool APM-SNAT'
+      register: command_output
+      failed_when: "command_output.rc == 2"
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Deleting local unneccessary files
+      file:
+        path: /var/tmp/fetched
+        state: absent
+
+    - name: Printing to console
+      debug: msg="{{command_output.stdout.split('\n') }}"
