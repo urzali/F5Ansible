@@ -1,0 +1,49 @@
+- name: Sync config if the devices are not Synced
+  hosts: BIGIPS_ALL
+  gather_facts: false 
+
+  tasks:
+
+    - name: Sync BigIP devices
+      shell: |
+        tmsh list cm device-group one-line | grep sync-failover > /var/tmp/sync
+        grep -oP "cm device-group\s+\K([^ ]*)" /var/tmp/testsync > /var/tmp/sync2
+        dg_var=$(cat /var/tmp/sync2)
+        myhostname=$(cat /proc/sys/kernel/hostname)
+        touch /var/tmp/sync3
+        tmsh show cm sync-status | grep "$myhostname to group $dg_var" > /var/tmp/sync3
+
+        if [[ -s /var/tmp/sync3 ]]; then
+          tmsh run cm config-sync to-group $dg_var
+          echo "Synced config from $myhostname to $dg_var" > /var/tmp/sync4 
+        else
+          echo "Sync not needed from $myhostname" > /var/tmp/sync4
+        fi
+        rm -f /var/tmp/sync
+        rm -f /var/tmp/sync2
+        rm -f /var/tmp/sync3        
+      register: ignorecode
+      failed_when: "ignorecode.rc not in [ 0, 1 ]"
+
+    - name: Copy files from Remote Units to Local
+      fetch:
+        src: /var/tmp/sync4
+        dest: /var/tmp/fetched2/{{ inventory_hostname }}
+        flat: yes
+
+    - name: Delete files created on Remote Units
+      file:
+        path: /var/tmp/sync4
+        state: absent
+
+- name: Local host file edit
+  hosts: localhost
+  vars:
+  connection: local
+
+  tasks:
+
+    - name: Append all files into one file
+      assemble:
+        src: /var/tmp/fetched2
+        dest: /var/tmp/resultingsyncstatus
