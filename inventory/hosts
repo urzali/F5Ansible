@@ -1,8 +1,0 @@
-[BIGIPS_ALL]
-  x.x.x.x
-  y.y.y.y
-  z.z.z.z
-
-[BIGIPS]
-  x.x.x.x
-  y.y.y.y
