@@ -1,6 +1,6 @@
 # F5ConfigSync
 Ansible scripts for Config Sync
-Ansible script that is going to Sync configuration from the peer device that has most recent changes.
+To Sync configuration from the peer device that has most recent changes.
 
 This script involves SSH logins to remote F5s and has been tested from RHEL unit.
 To authenticate using Shared Keys, copy over local ssh public key from /root/.ssh/id_rsa.pub to remote F5 at .ssh/authorized_keys
@@ -9,4 +9,6 @@ To authenticate using Shared Keys, copy over local ssh public key from /root/.ss
 Make sure to modify "hosts" file under "inventory" to specify BigIPs included in the script.
 Default inventory file should be at /etc/ansible/hosts (path is by default specified under /etc/ansible/ansible.cfg file)
 
+To run the script, type below command:
 
+ansible-playbook /app/F5-AnsibleScripts/playbooks/SyncDevices.yml -i /app/F5-AnsibleScripts/inventory/hosts
