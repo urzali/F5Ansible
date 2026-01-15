@@ -1,5 +1,7 @@
+---
 - name: Sync config if the devices are not Synced
   hosts: BIGIPS_ALL
+  user: root
   gather_facts: false 
 
   tasks:
@@ -7,7 +9,7 @@
     - name: Sync BigIP devices
       shell: |
         tmsh list cm device-group one-line | grep sync-failover > /var/tmp/sync
-        grep -oP "cm device-group\s+\K([^ ]*)" /var/tmp/testsync > /var/tmp/sync2
+        grep -oP "cm device-group\s+\K([^ ]*)" /var/tmp/sync > /var/tmp/sync2
         dg_var=$(cat /var/tmp/sync2)
         myhostname=$(cat /proc/sys/kernel/hostname)
         touch /var/tmp/sync3
@@ -47,3 +49,9 @@
       assemble:
         src: /var/tmp/fetched2
         dest: /var/tmp/resultingsyncstatus
+
+    - name: Modify Sync Status Result file to be ready for email
+      lineinfile:
+        dest: /var/tmp/resultingsyncstatus
+        regexp: "not needed"
+        state: absent
